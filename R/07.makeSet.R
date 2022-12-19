@@ -64,7 +64,7 @@ make.seurat.fdata <- function(seurat, gene.ref.gtf, rda.dir){
   gene.gtf=gtf[gtf$V3=="gene",]
 
   gene.annot=strsplit2(gene.gtf$V9, split = ";| ")
-  gene.annot=data.frame("gene_id"=gene.annot[,2], "gene_name"=gene.annot[,8], "gene_source"=gene.annot[,11], "gene_biotype"=gene.annot[,14])
+  gene.annot=data.frame("gene_id"=gene.annot[,2], "gene_name"=gene.annot[,11], "gene_source"=gene.annot[,8], "gene_biotype"=gene.annot[,14])
   head(gene.annot)
 
 
