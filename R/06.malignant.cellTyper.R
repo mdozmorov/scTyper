@@ -8,6 +8,14 @@
 #' @details classification of malignant and non malignant seurat object.
 #' @return Seurat object
 #' @export
+
+# load("results/seurat.rda")
+# seurat <- seurat
+# rda.dir=file.path(getwd(), "results")
+# malignant.cell.type = c("Epithelial_cell")
+# feature.to.test = "cell.type"
+# cells.test_reference="immune"
+
 malignant.cellTyper <- function(seurat,
                                 rda.dir = "./data",
                                 malignant.cell.type="Epithelial",
@@ -16,13 +24,15 @@ malignant.cellTyper <- function(seurat,
 
 
   message("[[",Sys.time(),"]] Run malignant.cellTyper --------")
-  cell.type=as.character(seurat$cell.type)
+  # cell.type=as.character(seurat$cell.type)
+  cell.type=as.character(seurat@meta.data$cell.type)
   mal.fil.st = cell.type==malignant.cell.type
 
   if(feature.to.test=="tissue.type"){
     cnv.cut=quantile(seurat$cnv.score[seurat$cell.group %in% cells.test_reference], probs=0.90, na.rm = TRUE)
   }else if(feature.to.test=="cell.type"){
-    cnv.cut=quantile(seurat$cnv.score[seurat$cell.group %in% c(cells.test_reference, "Unresolved_cell")], probs=0.90, na.rm = TRUE)
+    # cnv.cut=quantile(seurat$cnv.score[seurat$cell.group %in% c(cells.test_reference, "Unresolved_cell")], probs=0.90, na.rm = TRUE)
+    cnv.cut=quantile(seurat$cnv.score, probs=0.90, na.rm = TRUE)
   }
 
   seurat$cnv.st=seurat$cnv.score>cnv.cut

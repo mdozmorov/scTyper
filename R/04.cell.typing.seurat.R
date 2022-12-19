@@ -16,6 +16,23 @@
 #' @param NTP.norm.method Method of normalization in NTP, either c("none", "row.std")
 #' @param mc.cores The number of cores to use. Must be at least one(default=1), and parallelization requires at least two cores.
 #' @export
+#'
+
+# seurat <- pbmc_pat_primary
+# marker="Puram.2017.HNSCC.TME"
+# cell.typing.method=c("NTP")
+# level=c("cell")
+# wd=getwd()
+# slot=c("scale.data")
+# assay='RNA'
+# ntp.dir=file.path(getwd(), "results")
+# rda.dir=file.path(getwd(), "results")
+# NTP.g.filter.method=c("sd")
+# NTP.gene.filter.cutoff=0.3
+# NTP.distance=c("cosine")
+# NTP.norm.method=c("none")
+# mc.cores=4
+
 cell.typing.seurat=function(seurat,
                             marker="Puram.2017.HNSCC",
                             cell.typing.method=c("NTP", "ES", "Average"),
