@@ -25,6 +25,40 @@
 #' @details CNV inference
 #' @return Seurat object
 #' @export
+
+# seurat <- seurat # Should be typed with 04.cell.typing.seurat
+# assay='RNA'
+# output.dir=file.path(getwd(), "results")
+# rda.dir=file.path(getwd(), "results")
+
+# rsync -arvh --progress --ignore-existing -e 'ssh -o HostKeyAlgorithms=+ssh-dss' mdozmorov@merlot.bis.vcu.edu:/home/sequencing/data/ExtData/CellRanger/refdata-gex-GRCh38-2020-A/genes/genes.gtf .
+gene.ref.gtf=file.path(getwd(), "genes.gtf")
+fdata = make.seurat.fdata(seurat, rda.dir, gene.ref.gtf = gene.ref.gtf)
+
+# seurat object must have seurat@meta.data$sample.name annotation
+seurat@meta.data$sample.name <- seurat@meta.data$orig.ident
+# seurat object must have seurat@meta.data$cell.group annotation that matches pheno_info$Sample_ID
+seurat@meta.data$cell.group <- ifelse(seurat@meta.data$cell.type == "Unresolved_cell", "Cancer", "Normal")
+pheno.df <- data.frame(Sample_ID = seurat@meta.data$sample.name,
+                       TissueType = seurat@meta.data$cell.group)
+pheno_info = pheno.df
+
+feature.to.test="tissue.type"
+cells.test_reference = "Normal"
+cells.test_excluded = c("Epithelial_cell")
+fc.cutoff = 0.05
+cutoff.gene.cluster=0.05
+min_mean_expr_cutoff = 0.1
+window_length = 101
+smooth_ends = TRUE
+recenter_method = "median"
+ordered = FALSE
+inv_log = TRUE
+sd_amplifier = 1.5
+bp = 1000000
+sd.cut = 0.3
+mc.cores=4
+
 run.inferCNV <- function(seurat,
                          assay='RNA',
                          output.dir = "./",
@@ -49,14 +83,14 @@ run.inferCNV <- function(seurat,
                          mc.cores=1){
 
   dir.create(output.dir, showWarnings = F)
-  if(feature.to.test=="tissue.type"){
-    seurat@meta.data$cell.group = pheno_info[match(seurat@meta.data$sample.name, pheno_info[,"Sample_ID"]),"TissueType"]
-  }else if(feature.to.test=="cell.type"){
-    if(is.null(seurat@meta.data$cell.type.ref)){
-      stop("### You have to assign separately cell type reference to seurat@meta.data$cell.type.ref. ###")
-    }
-    seurat@meta.data$cell.group = seurat@meta.data$cell.type.ref
-  }
+  # if(feature.to.test=="tissue.type"){
+  #   seurat@meta.data$cell.group = pheno_info[match(seurat@meta.data$sample.name, pheno_info[,"Sample_ID"]),"TissueType"]
+  # }else if(feature.to.test=="cell.type"){
+  #   if(is.null(seurat@meta.data$cell.type.ref)){
+  #     stop("### You have to assign separately cell type reference to seurat@meta.data$cell.type.ref. ###")
+  #   }
+  #   seurat@meta.data$cell.group = seurat@meta.data$cell.type.ref
+  # }
 
 
   message("[[",Sys.time(),"]] Prepare inferCNV input data --------")
@@ -77,7 +111,7 @@ run.inferCNV <- function(seurat,
 
 
   table(gene.od$chr)
-  fil.st=is.element(gene.od$chr, c(1:22, "X"))
+  fil.st=is.element(gsub("chr", "", gene.od$chr), c(1:22, "X"))
 
   sum(is.na(match(gene.od$gene, rownames(seurat))))
 
@@ -151,7 +185,7 @@ run.inferCNV <- function(seurat,
 
   cts.geneClustList = cts.geneSetCluster(cset, rda.dir = rda.dir, perm.t.resList, fc.cutoff = fc.cutoff, bp = bp)
   gprofiler.resList = cts.GO(cell.type.set, rda.dir = rda.dir, cts.geneClustList)
-
+  # !!! SKIP
   infercnv_obj =fil.infercnv_obj(infercnv_obj, cset, rda.dir = rda.dir, gprofiler.resList, cell.type.set, cts.geneClustList, cutoff.gene.cluster=cutoff.gene.cluster)
 
   # 10. subtract the reference values from observations, now have log(fold change) values
@@ -190,6 +224,7 @@ run.inferCNV <- function(seurat,
   seurat$cnv.score=pData(fil.cset)$cnv.score
   save(fil.cset, file=file.path(rda.dir, 'fil.cset.rda'))
 
+  save(seurat, file = file.path(rda.dir, "seurat.rda"))
   return(seurat)
 }
 
