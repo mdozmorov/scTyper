@@ -1,0 +1,369 @@
+---
+title: "scTyper: a comprehensive pipeline for the cell typing analysis of single-cell RNA-seq data"
+output: html_document
+# date: "2022-12-13"
+---
+
+# 1 Data preparations
+
+scTyper requires three types of input data: single-cell RNA-seq (scRNA-seq) data, phenotype data and cell type markers.
+
+## 1.1 scRNA-seq data
+
+scTyper requires ‘Seurat’ object for the single-cell expression as input data. We provide a ‘Seurat’ object for the preprocessed single-cell data as test data, which contains normalized expression values for 14,985 genes and 407 cells.
+
+Load scRNA-seq test data
+
+```{r}
+# load test scRNA-seq dataset
+library(scTyper)
+# test.seurat=loadTestData() 
+    library(httr)
+    src_url <- "https://github.com/omicsCore/scTyper/raw/master/inst/extdata/GSE103322.seurat.rda"
+    file_name <- file.path(getwd(), tail(unlist(strsplit(src_url, "/")), n = 1))
+    GET(src_url, write_disk(file_name, overwrite = TRUE), timeout(3600))
+    detach("package:httr", unload = TRUE)
+    test.seurat = get(load(file_name))
+    test.seurat <- load(basename(file_name))
+    return(test.seurat)
+    
+library(ExperimentHub)
+library(SingleCellExperiment)
+library(Seurat)
+eh = ExperimentHub()
+dset <- query(eh , "GSE103322")
+dset
+sce <- dset[[1]]
+logcounts(sce) <- log2(assay(sce, "TPM") + 1)
+test.seurat <- as.Seurat(sce, counts = "TPM", data = "logcounts")
+```
+
+```{r eval=FALSE}
+# Custom data loading
+library(Seurat)
+library(scTyper)
+library(reshape2)
+library(limma)
+library(Biobase)
+library(GenomicRanges)
+# Project folder path
+dir_data <- "/Users/mdozmorov/Documents/Work/VCU_work/Bhaumik/2022-10.Adam_Khader"
+fileNameOut4 <- file.path(dir_data, "results", "seurat_pat_primary.rda")
+load(fileNameOut4)
+```
+
+
+scTyper can also use the ‘Seurat’ object for raw read counts data as input by setting the parameter ‘norm.seuart’ to ‘TRUE’. For user’s convenience, scTyper also supports with raw data preprocessing pipelines for FASTQC and Cell Ranger from 10X Genomics by setting the parameters ‘qc’, ‘run.cellranger’ and ‘norm.seurat’ to ‘TRUE’. The preprocessing includes quality control, sequence alignment and quantification of raw sequencing data. See below for details.
+
+## 1.2 Phenotype data
+
+scTyper requires a file in the form of ‘CSV’ that contains the information of sample ID and tissue type for the malignant cell typing. This file should be named Sample_ID in the first column and TissueType in the second column (Refer to the example data below).
+
+Sample_ID	TissueType
+sample_1	Cancer
+sample_2	Cancer
+sample_3	Normal
+sample_4	Normal
+sample_5	Normal
+
+Phenotype data for test dataset
+
+Sample_ID	TissueType
+Cancer_P0	Cancer
+LymphNode_P0	Lymphnode
+Cancer_P5	Cancer
+LymphNode_P5	Lymphnode
+Cancer_P6	Cancer
+Cancer_P7	Cancer
+Cancer_P8	Cancer
+Cancer_P10	Cancer
+Cancer_P12	Cancer
+Cancer_P13	Cancer
+Cancer_P16	Cancer
+Cancer_P17	Cancer
+Cancer_P18	Cancer
+Cancer_P20	Cancer
+LymphNode_P20	Lymphnode
+Cancer_P22	Cancer
+Cancer_P23	Cancer
+Cancer_P24	Cancer
+Cancer_P25	Cancer
+LymphNode_P25	Lymphnode
+Cancer_P26	Cancer
+LymphNode_P26	Lymphnode
+Cancer_P28	Cancer
+LymphNode_P28	Lymphnode
+
+```{r}
+# phenotype data for test data
+pheno.fn=system.file("extdata/pheno_info_public.csv", package = "scTyper")
+```
+
+## 1.3 Marker selection
+
+The scTyper package provides manually curated and pre-installed cell marker databases comprised of ‘scTyper.db’ and ‘CellMarker DB’ for cell typing. We have used a unified nomenclature to label the marker gene sets in the database. For example, a cell marker label ‘Puram.2017.HNSCC.TME’ was designated by concatenating the first author name of the publication (‘Puram’), publication year (‘2017’), tissue type/cancer type (‘HNSCC’), and categories of cell composition (‘TME’, tumor microenvironment). Detailed information about the cell markers such as data source, PubMed ID, species, tissue type, study detail, etc. was also provided in the ‘extdata’ directory (scTyper.db, CellMarker DB file).
+Using this nomenclature, users can easily search the cell markers of interest.
+
+If the user wants to set cell markers for one or more studies, set the desired study names of ‘StudyName’ column as a ‘marker’ parameter.
+Following is examples:
+
+```{r}
+# single study
+marker="Puram.2017.HNSCC.TME"
+# multiple study
+marker=c("Kawai.2018.Liver", "Li.2017.CRC.TME")
+
+# Users can also set cell markers by combining identifiers of interest. Following is examples:
+# Identifier
+marker=c("Costea.2013.OSCC.CAF:Normal cell:NF", "Costea.2013.OSCC.CAF:Cancer cell:CAF_D",
+         "Elyada.2019.PDAC.CAF:Cancer cell:iCAF", "Elyada.2019.PDAC.CAF:Cancer cell:myCAF")
+```
+
+Also, scTyper allows a ‘list’ data type for user-defined cell markers.
+Following is examples:
+
+```{r}
+# user defined marker list
+marker=list(T_cell=c("CD2", "CD3D", "CD3E", "CD3G"),
+            Fibroblast=c("FAP", "PDPN", "COL1A2", "DCN", "COL3A1", "COL6A1"),
+            Macrophage=c("CD14", "CD163", "CD68", "FCGR2A", "CSF1R"),
+            Dendritic_cell=c("CD40", "CD80", "CD83", "CCR7"),
+            Mast_cell=c("CMA1", "MS4A2", "TPSAB1", "TPSB2"),
+            Myocyte=c("ACTA1", "ACTN2", "MYL2", "MYH2"),
+            Endothelial.cell=c("PECAM1", "VWF", "ENG"),
+            B_Plasma_cell=c("SLAMF7", "CD79A", "BLNK", "FCRL5"),
+            Epithelial_cell=c("KRT14", "KRT17", "KRT6A", "KRT5", "KRT19", "KRT8",
+                              "KRT16", "KRT18", "KRT6B", "KRT15", "KRT6C", "KRTCAP3","EPCAM", "SFN"))
+```
+
+Note that if there are overlapping genes between markers of each cell type, those genes are excluded from cell typing. And if there is only one marker gene for a particular cell type, scTyper generates error message ("### Error :: If there is only one marker gene for a particular cell type, please use the average method ###). In this case, users can run scTyper by setting the parameter ‘cell.type.method’ to ‘Average’.
+
+## 1.3.1 Modification of the marker database (Optional)
+
+If you want to modify marker database, you can change the ‘sigTyper.db.txt’ file in the ‘scTyper/extdata’ directory and then use the “update.sig.db()” function to modify the original marker database.
+
+```{r}
+update.sig.db(sig.db.path = system.file(sig.db.path="extdata/sigTyper.DB.txt", package = "scTyper"), db.name=c("sigTyper.db"), output.dir=system.file("/data",package = "scTyper"))
+```
+
+## 2 Run scTyper()
+
+scTyper consist of the modularized processes of ‘QC’, ‘Cell Ranger’, ‘Seurat processing’, ‘cell typing’, and ‘malignant cell typing’. Pre-processing step includes QC, Cell Ranger, Seurat processing. Cell typing algorithms are implemented to estimate the expression of cell marker sets, including NTP (Nearest template prediction), ES (pre-ranked GSEA), and Average (average expression values). Also in malignant cell typing, inferred DNA copy numbers are estimated by an inferCNV R package. These processes can be customized by manipulating the parameters for each process. scTyper can be run as a single command, as in the following example.
+
+Skip pre-processing and run NTP cell typing with inferCNV at cell level
+```{r}
+celltyped.seurat=scTyper(seurat.object=test.seurat,
+                         slot = "originalexp",
+                         marker="Puram.2017.HNSCC.TME",
+                         wd = getwd(),
+                         output.name = "scTyper.output",
+                         pheno.fn = pheno.fn,
+                         qc = FALSE,
+                         run.cellranger=FALSE,
+                         norm.seurat=FALSE,
+                         cell.typing.method="NTP",
+                         NTP.g.filter.method = "sd",
+                         level="cell",
+                         run.inferCNV=TRUE,
+                         proj.name = "scTyper",
+                         gene.ref.gtf="/data/pubdata/ngs_ref/cellranger/refdata-cellranger-GRCh38-1.2.0/genes/genes.gtf",
+                         feature.to.test = "tissue.type",
+                         cells.test_excluded=c("Epithelial_cell", "Unresolved_cell"),
+                         cells.test_reference = "Normal",
+                         malignant.cell.type="Epithelial_cell",
+                         report.mode=TRUE,
+                         mc.cores = 1)
+```
+
+
+3 scTyper() arguments
+In the table below, the user can check the argument and description of scTyper(). For a detailed parameter description of the single command and its internal step-by-step functions, see the Reference Manual. Note when the user have pre-processed seurat object (completed with qc, Cell Ranger and Seurat processing), seurat.object parameter must be assigned.
+
+Process	Parameters	Description	Values
+global configuration	wd	Working directory	Character
+output.name	Output directory name	Character
+pheno.fn	Phenotype file path	File path
+qc, run.cellranger , norm.seurat	Indicate whether the process run	Logical (Default = ‘FALSE’)
+cell.typing.method	Cell typing method	‘NTP’ (Default), ‘ES’, ‘Average’
+level	Indicate the cell assignment level (cell or cluster)	‘cell’ (Default), ‘cluster’
+run.inferCNV	Indicate whether ‘malignant cell typing by inferCNV process run	Logical (Default = ‘TRUE’)
+project.name	Project name	Character
+mc.cores	Number of cores	Numeric (Default = ‘1’)
+report.mode	Generate report file	Logical (Default = ‘TRUE’)
+QC	fastqc.path	FastQC program path	File path
+fastq.dir	FastQC output directory	File path
+fq1.idx	Index of the FASTQ file (Read 1)	Character (Default = ‘_R1_001.fastq’)
+fq2.idx	Index of the FASTQ file (Read 2)	Character (Default = ‘_R2_001.fastq’)
+CellRanger	cellranger.path	Cell Ranger program path	File path
+cellranger.ref.dir	Directory of Cell Ranger reference file	File path
+Seurat processing	percent.min.cells	Cutoff to filter features containing minimum percent of cells	0.1
+min.features	Cutoff to filter cells containing minimum number of features	200
+percent.mt	Cutoff for filtering cells that have >n percent mitochondrial counts	10
+vars.to.regress	Variables to regress out	Default=c(‘nCount_RNA’, ‘percent.mt’)
+dims	A vector of the dimensions to use in construction of the SNN graph.	1:100
+resolution	Value of the resolution parameter, use a value above (below) 1.0 if you want to obtain a larger (smaller) number of communities.	2
+Cell typing	seurat.object	Seurat object	Seurat object
+slot	Data type of Seurat object	‘scale.data’ (Default), ‘count.data’, ‘data’
+marker	Cell markers to use cell typing	Character or List (Signature names or Study names or User defined gene set list)
+assay	Assay of Seurat object	Character (Default=’RNA’)
+NTP.g.filter.method	Method to filter genes in NTP	‘sd’ (Default),’mad’, ‘none’
+NTP.gene.filter.cutoff	Cutoff to filter genes of in NTP	Numeric (Default = ‘0.3’)
+NTP.distance	NTP distance method	‘cosine’ (Default), ‘correlation’
+NTP.norm.method	NTP normalization method	‘none’ (Default), ‘row.std’
+Malignant cell typing (inferCNV	gene.ref.gtf	Path of GTF file including genomic location for genes	File path
+feature.to.test	Column header name of the meta data in Seurat object (select the cell groups for T.test)	Character (Default = ‘cell.type’), ‘tissue.type’
+cells.test_excluded	A value indicates the cells to be excluded in T.test	Character (Default = ‘Epithelial’)
+cells.test_reference	A value indicates the cells to use as be excluded in T.test	Character (Default = ‘immune’)
+fc.cutoff	Cutoff of fold change	Numeric (Default = ‘0.05’)
+cutoff.gene.cluster	A cutoff P-value for filtering out the gene clusters (calculated from GO analysis)	Numeric (Default = ‘0.05’)
+malignant.cell.type	Cell type to assign malignant cell	Character (Default = ’Epithelial’)
+
+
+3.1 inferCNV parameter in scTyper()
+InferCNV is an analysis method that infer CNVs (copy number variations) from single-cell RNA-seq data.
+See the parameters below for gene cluster detection in inferCNV.
+
+feature.to.test : Cell group for permutation t.test in the inferCNV process. The value is “tissue.type” or “cell.type”, the column header name of the metadata in the Seurat object.
+cells.test_excluded Cell type to be excluded in permutation t.test from the inferCNV process.
+cells.test_reference Cell type containing the classification of the reference cell in permutation t.test from the inferCNV process.
+
+4 scTyper() final output
+Seurat object : scTyper() function returns a Seurat object, which is a widely used data type for the subsequent analysis and biological interpretation of scRNA-seq. The seurat object is a class allowing for the storage and manipulation of single-cell data. The seurat object includes any piece of information associated with a cell (examples include read depth, alignment rate, experimental batch, or subpopulation identity) or feature (ENSG name, variance). After scTyper process, the seurat object includes the inferred cell type and cnv core as a result of cell typing.
+        The following is a metadata column that stores pipeline results in seurat object.
+                - cell.type: Inferred cell type results
+                - cnv.score: Copy number variation score estimated by malignant cell typing (inferCNV)
+                - malignant.st: Logical value of malignant cells estimated by malignant cell typing (inferCNV)
+
+Report file : If report.mode=TRUE in scTyper() parameter, the results and the executed processes are automatically documented as a report. ‘report.mode’ is a parameter used to combine the results into one unified file. The report summarizes the processing steps, cell typing and clustering results, and visualizing the results plots. This may help users reproduce their analysis workflows.
+
+Automatically generated output directory : The result files are automatically created in the output directory set by the user with the parameter ‘wd’ and ‘output.name’ depending on the processing step.
+
+        - 00_qc : FastQC output directory
+        - 01_count : CellRanger output directory
+        - 02_NTP : NTP output directory
+        - 03_inferCNV : inferCNV output directory
+        - data : RData directory (rda). The final result, ‘seurat.rda’, is saved.
+
+5 Visualization
+If “report.mode = TRUE” in scTyper (), visualization is performed automatically. The following shows the individual visualization using the final output seurat object.
+
+Cell type statistics across samples
+Number of cells by cell type per sample
+cell.type.tbl=table(celltyped.seurat$cell.type)
+ct.sample.tbl=table(celltyped.seurat$cell.type, celltyped.seurat$sample.name)
+
+celltype.stat=cbind(cell.type.tbl, ct.sample.tbl)
+colnames(celltype.stat)[1]="Total"
+kable(celltype.stat) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+Total	Cancer_P0	Cancer_P10	Cancer_P12	Cancer_P13	Cancer_P16	Cancer_P17	Cancer_P18	Cancer_P20	Cancer_P22	Cancer_P23	Cancer_P24	Cancer_P25	Cancer_P26	Cancer_P28	Cancer_P5	Cancer_P6	Cancer_P7	Cancer_P8	LymphNode_P0	LymphNode_P20	LymphNode_P25	LymphNode_P26	LymphNode_P28	LymphNode_P5
+B_Plasma_cell	199	5	44	2	10	15	6	21	0	0	0	0	6	0	0	3	4	0	13	13	1	27	3	23	3
+Dendritic_cell	281	19	5	13	36	29	10	36	2	5	0	3	35	5	27	7	2	0	10	1	0	22	5	7	2
+Endothelial_cell	303	3	7	0	3	40	18	20	2	2	0	3	10	5	27	10	42	0	26	1	0	20	14	20	30
+Fibroblast	798	13	24	0	5	77	39	30	11	39	0	61	66	43	152	15	39	1	19	4	0	41	44	62	13
+Macrophage	163	4	1	2	4	17	2	31	2	0	0	5	8	3	20	41	3	0	3	0	0	8	2	6	1
+Malignant_cell	2761	20	4	14	16	101	356	230	328	123	0	30	194	63	78	108	213	6	12	0	345	91	218	112	99
+Mast_cell	135	7	1	1	4	25	8	14	0	23	0	21	13	1	0	4	1	0	3	2	0	3	0	2	2
+Myocyte	233	4	3	1	2	18	3	19	0	9	0	7	35	7	66	1	4	0	0	1	0	21	11	14	7
+T_cell	1029	184	0	124	10	274	48	166	0	0	51	0	67	3	0	24	0	0	18	1	0	58	1	0	0
+Distribution of inferred cell types
+The bar plot shows the cell type distribution of the sample.
+barplot(cell.type.tbl, las=2, ylab="Number of cells", cex.names=0.8, cex.axis=0.8)
+
+
+Proportion of cell types across samples
+The bar plot shows the cell type proportion of the sample.
+ct.sample.proportion=apply(ct.sample.tbl, 2, function(a) a/sum(a))
+barplot(ct.sample.proportion, las=2, ylab="Proportion (%)", cex.names=0.8, cex.axis=0.8, legend.text = rownames(ct.sample.proportion), args.legend = list(x = 'right', bty='n', inset=c(-0.3,0), xpd = TRUE, cex=0.7))
+
+
+inferred cell types by cell typing method
+The t-SNE plot with colors representing inferred cell type label.
+cols=rainbow_hcl(length(levels(celltyped.seurat$cell.type))); names(cols)=levels(celltyped.seurat$cell.type)
+p1=DimPlot(celltyped.seurat, reduction = 'tsne',group.by="cell.type",label=F,cols=cols, pt.size=0.2); p1=LabelClusters(plot = p1, id = "cell.type", size = 3)
+p1
+
+
+Malignant cells by inferCNV
+The t-SNE plot shows malignant cells estimated with inferCNV.
+p4=DimPlot(celltyped.seurat, reduction = 'tsne',group.by="malignant.st",label=F, pt.size=0.2, cols=c("grey90", "red"))
+p4
+
+
+CNV score by inferCNV
+The t-SNE plot shows the proportion of CNV scores assigned by using the inferCNV algorithm.
+p5=FeaturePlot(celltyped.seurat, features = "cnv.score", cols=c("grey90", "blue"), label=FALSE, pt.size=0.2)
+p5
+
+
+Seurat clusters
+The t-SNE plot shows the distribution of cluster classified by Seurat.
+p2=DimPlot(celltyped.seurat, reduction = 'tsne',group.by="seurat_clusters",label=F, pt.size=0.2); p2=LabelClusters(plot = p2, id = "seurat_clusters", size = 3)
+p2
+
+
+Samples
+The t-SNE plot shows the distribution of sample.
+p3=DimPlot(celltyped.seurat, reduction = 'tsne',group.by="sample.name",label=F, pt.size=0.2)
+p3
+
+
+Cell markers heatmap
+The heatmap shows the cell typing result and the gene expression levels of cell marker gene sets from Puram.2017.HNSCC.TME. The cell type assigned for each method is indicated by a color bar.
+draw.heatmap(seurat = celltyped.seurat,
+             wd = "/data/Rpackage/scTyper",
+             run.inferCNV = TRUE,
+             slot = "scale.data",
+             marker="Puram.2017.HNSCC.TME")
+
+
+6 Example
+Skip pre-processing and run ES cell typing using inferCNV at cell level
+If the user wants to use “ES” cell typing method and run inferCNV at cell level, see the following parameters.
+celltyped.seurat=scTyper(seurat.object=test.seurat,
+                         marker="Puram.2017.HNSCC.TME",
+                         wd = getwd(),
+                         output.name = "scTyper.output",
+                         pheno.fn = pheno.fn,
+                         qc = FALSE,
+                         run.cellranger=FALSE,
+                         norm.seurat=FALSE,
+                         cell.typing.method="ES",
+                         level="cell",
+                         run.inferCNV=TRUE,
+                         proj.name = "scTyper",
+                         gene.ref.gtf="/data/pubdata/ngs_ref/cellranger/refdata-cellranger-GRCh38-1.2.0/genes/genes.gtf",
+                         feature.to.test = "tissue.type",
+                         cells.test_excluded=c("Epithelial_cell", "Unresolved_cell"),
+                         cells.test_reference = "Normal",
+                         malignant.cell.type="Epithelial_cell",
+                         report.mode=TRUE,
+                         mc.cores = 1)
+Run pre-processing (QC, CellRanger, Normalization) and NTP cell typing with inferCNV at cell level
+If users want to run all pipelines with NTP cell typing method at cell level, see the following parameters.
+###### Running all step (User's data)
+processed.celltyped.seurat=scTyper(marker="Puram.2017.HNSCC.TME",
+                                   wd="/data/Rpackage/scTyper",
+                                   output.name = "test.result",
+                                   pheno.fn="/data/Rpackage/scTyper/data/pheno_info_test.csv",
+                                   qc = TRUE,
+                                   run.cellranger=TRUE,
+                                   norm.seurat=TRUE,
+                                   cell.typing.method="NTP",
+                                   level="cell",
+                                   run.inferCNV=TRUE,
+                                   proj.name = "scTyper",
+                                   fastqc.path="/data/program/bin/fastqc",
+                                   fastq.dir="/data/Rpackage/scTyper/test",
+                                   fq1.idx="_R1_001.fastq",
+                                   fq2.idx="_R2_001.fastq",
+                                   cellranger.path="/data/program/bin/cellranger",
+                                   cellranger.ref.dir="/data/pubdata/ngs_ref/cellranger/refdata-cellranger-GRCh38-1.2.0",
+                                   gene.ref.gtf="/data/pubdata/ngs_ref/cellranger/refdata-cellranger-GRCh38-1.2.0/genes/genes.gtf",
+                                   feature.to.test = "tissue.type",
+                                   cells.test_excluded=c("Epithelial_cell", "Unresolved_cell"),
+                                   cells.test_reference = "Normal",
+                                   malignant.cell.type="Epithelial_cell",
+                                   report.mode=TRUE,
+                                   mc.cores = 1)
+Help information is available with scTyper –help.
